@@ -715,6 +715,10 @@ static void ra_event_handler(const rc_client_event_t *event, rc_client_t *client
 	(void)client;
 	RA_LOG("Event: type=%d", event->type);
 	switch (event->type) {
+
+	// -----------------------------------------------------------------------
+	// ACHIEVEMENT TRIGGERED
+	// -----------------------------------------------------------------------
 	case RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED:
 		{
 			if (event->achievement->id == 101000001) {
@@ -723,22 +727,57 @@ static void ra_event_handler(const rc_client_event_t *event, rc_client_t *client
 				RA_LOG("*** ACHIEVEMENT TRIGGERED: [%u] %s — %s ***",
 					event->achievement->id, event->achievement->title,
 					event->achievement->description);
-					gba_dump_trigger(event->achievement->id);
-				const int title_max = 28;
-				const int desc_max  = 60;
-				char title_buf[32];
-				char desc_buf[64];
-				snprintf(title_buf, title_max + 1, "%s", event->achievement->title);
-				if (strlen(event->achievement->title) > (size_t)title_max)
-					strcat(title_buf, "...");
-				snprintf(desc_buf, desc_max + 1, "%s", event->achievement->description);
-				if (strlen(event->achievement->description) > (size_t)desc_max)
-					strcat(desc_buf, "...");
+				gba_dump_trigger(event->achievement->id);
+
+				// OSD Info-Popup: INFO_MAXW=32, minus 2 Rahmen-Spalten = 30 Zeichen Nutzbreite
+				const int LINE_W = 30;
+
+				// --- Titel: bei Überlänge auf zwei Zeilen umbrechen statt abschneiden ---
+				char title_a[32] = {}; // Zeile 1: max. 30 Zeichen
+				char title_b[32] = {}; // Zeile 2: max. 27+3="..." Zeichen (optional)
+				{
+					size_t tlen = strlen(event->achievement->title);
+					if (tlen <= (size_t)LINE_W) {
+						// Passt auf eine Zeile
+						memcpy(title_a, event->achievement->title, tlen);
+					} else {
+						// Erste Zeile: genau LINE_W Zeichen
+						memcpy(title_a, event->achievement->title, LINE_W);
+						// Zweite Zeile: Rest
+						size_t rest = tlen - LINE_W;
+						if (rest <= (size_t)LINE_W) {
+							memcpy(title_b, event->achievement->title + LINE_W, rest);
+						} else {
+							// Rest selbst zu lang → auf 27 kürzen + "..."
+							memcpy(title_b, event->achievement->title + LINE_W, LINE_W - 3);
+							strcat(title_b, "...");
+						}
+					}
+				}
+
+				// --- Beschreibung: max. 30 Zeichen (OSD bricht nicht automatisch um) ---
+				char desc_buf[32] = {};
+				{
+					size_t dlen = strlen(event->achievement->description);
+					if (dlen <= (size_t)LINE_W) {
+						memcpy(desc_buf, event->achievement->description, dlen);
+					} else {
+						// 27 Zeichen + "..." = exakt 30
+						memcpy(desc_buf, event->achievement->description, LINE_W - 3);
+						strcat(desc_buf, "...");
+					}
+				}
+
+				// --- Popup ohne Header-Zeile ---
 				char buf[NOTIF_TEXT_MAX];
-				snprintf(buf, sizeof(buf),
-					">> ACHIEVEMENT <<\n\n%s\n%s",
-					title_buf, desc_buf);
-								ra_notify_urgent(buf, 4000, 1);
+				if (title_b[0]) {
+					// Titel geht über zwei Zeilen → Beschreibung weglassen
+					snprintf(buf, sizeof(buf), "%s\n%s", title_a, title_b);
+				} else {
+					// Titel passt in eine Zeile → Beschreibung dazu
+					snprintf(buf, sizeof(buf), "%s\n%s", title_a, desc_buf);
+				}
+				ra_notify_urgent(buf, 5000, 1);
 			}
 		}
 		break;
